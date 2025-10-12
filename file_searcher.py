@@ -9,7 +9,7 @@ def get_files_in_directory(path: str | Path) -> list[Path]:
                 res.extend(get_files_in_directory(entry))
             elif entry.is_file() and entry.suffix == '.py':
                 res.append(entry)
-    except PermissionError:
+    except (PermissionError, OSError, NotADirectoryError):
         pass
     
     return res
