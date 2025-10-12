@@ -1,2 +1,21 @@
-venv/
-.env
+# IDE
+.idea/
+*.iml
+*.iws
+
+# PyCharm
+/.idea/
+/.idea/*
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Editors
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
