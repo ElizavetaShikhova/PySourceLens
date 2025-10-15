@@ -32,7 +32,6 @@ class ImportAnalyzer:
             self._assigning_variable_importlib(node)
             self._builtin_import(node)
             self._track_string_assignments(node)
-        print(self.imports)
 
     def _check_import(self, import_name: str) -> str:
         if not import_name or not isinstance(import_name, str):
