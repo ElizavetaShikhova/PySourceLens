@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 def get_files_in_directory(path: str | Path) -> list[Path]:
     path = Path(path)
@@ -9,8 +10,8 @@ def get_files_in_directory(path: str | Path) -> list[Path]:
                 res.extend(get_files_in_directory(entry))
             elif entry.is_file() and entry.suffix == '.py':
                 res.append(entry)
-    except (PermissionError, OSError, NotADirectoryError):
-        pass
+    except (PermissionError, OSError, NotADirectoryError) as e:
+        logging.warning(f"Skipping inaccessible path: {path} — {e}")
     
     return res
 

@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict
 import ast_parser
 import ast
+from ASTParseError import ASTParseError
 import importlib.util as util
 
 
@@ -15,7 +16,7 @@ class ImportAnalyzer:
         "__import__"}
         self._string_literals: Dict[str, str] = {}
 
-    def find_imports(self, all_paths: list[Path]) -> dict[str]:
+    def find_imports(self, all_paths: list[Path]) -> Dict[str, str]:
         for path in all_paths:
             self._find_import_in_file(path)
         return self.imports
@@ -23,15 +24,15 @@ class ImportAnalyzer:
     def _find_import_in_file(self, path: Path) -> None:
         try:
             module = ast_parser.parse_file(path)
-        except SyntaxError:
+        except (SyntaxError, ASTParseError):
             return  
         for node in ast.walk(module):
             self._simple_import(node)
             self._from_import(node, path)
-            self._importlib_import(node)
             self._assigning_variable_importlib(node)
-            self._builtin_import(node)
             self._track_string_assignments(node)
+            if isinstance(node, ast.Call):
+                self._handle_call(node)
 
     def _check_import(self, import_name: str) -> str:
         if not import_name or not isinstance(import_name, str):
@@ -46,9 +47,12 @@ class ImportAnalyzer:
             elif spec.origin is None:
                 result = ""
             else:
-                path = Path(spec.origin).resolve()
-                result = str(path)
-        except (AttributeError, ValueError, ImportError, OSError):
+                try :
+                    path = Path(spec.origin).resolve()
+                    result = str(path)
+                except (OSError, RuntimeError):
+                    result = ""
+        except (AttributeError, ValueError, ImportError, OSError, ModuleNotFoundError):
             result = ""
         
         self._checked[import_name] = result
@@ -81,31 +85,7 @@ class ImportAnalyzer:
                 else:
                     for alias in node.names:
                         name_import = alias.name
-                        self.imports[name_import] = self._check_import(name_import)        
-
-    def _importlib_import(self, node) -> None:
-        if isinstance(node, ast.Expr):
-            val = node.value
-            if isinstance(val, ast.Call):
-                if isinstance(val.func, ast.Name):
-                    if val.func.id in self._importlib_functions:
-                        if val.args and isinstance(val.args[0], ast.Constant):
-                            module_name = val.args[0].value
-                            if isinstance(module_name, str) and module_name.strip():
-                                self.imports[module_name] = self._check_import(module_name)
-
-                if isinstance(val.func, ast.Attribute):
-                    func_val = val.func.value
-                    attr = val.func.attr
-                    if (isinstance(func_val, ast.Name) and
-                        func_val.id in self._importlib_aliases and
-                        attr in ('import_module', '__import__')):
-                        if val.args and isinstance(val.args[0], ast.Constant):
-                            module_name = val.args[0].value
-                            if isinstance(module_name, str):
-                                self.imports[module_name] = self._check_import(module_name)
-
-                
+                        self.imports[name_import] = self._check_import(name_import)              
 
     def _assigning_variable_importlib(self, node) -> None:
         if isinstance(node, ast.Assign):
@@ -119,15 +99,31 @@ class ImportAnalyzer:
                     if isinstance(target, ast.Name):
                         self._importlib_aliases.add(target.id)
 
-    def _builtin_import(self, node):
-        if isinstance(node, ast.Expr):
-            val = node.value
-            if isinstance(val, ast.Call) and isinstance(val.func, ast.Name):
-                if val.func.id == "__import__":
-                    if val.args and isinstance(val.args[0], ast.Constant):
-                        module_name = val.args[0].value
-                        if isinstance(module_name, str) and module_name.strip():
-                            self.imports[module_name] = self._check_import(module_name)
+    def _handle_call(self, call_node: ast.Call) -> None:
+        if isinstance(call_node.func, ast.Name) and call_node.func.id == "__import__":
+            if call_node.args and isinstance(call_node.args[0], ast.Constant):
+                mod_name = call_node.args[0].value
+                if isinstance(mod_name, str) and mod_name.strip():
+                    self.imports[mod_name] = self._check_import(mod_name)
+            return
+
+        if isinstance(call_node.func, ast.Attribute):
+            obj = call_node.func.value
+            attr = call_node.func.attr
+            if (attr in ('import_module', '__import__') and
+                isinstance(obj, ast.Name) and
+                obj.id in self._importlib_aliases):
+                if call_node.args and isinstance(call_node.args[0], ast.Constant):
+                    mod_name = call_node.args[0].value
+                    if isinstance(mod_name, str) and mod_name.strip():
+                        self.imports[mod_name] = self._check_import(mod_name)
+            return
+        
+        if isinstance(call_node.func, ast.Name) and call_node.func.id in self._importlib_functions:
+            if call_node.args and isinstance(call_node.args[0], ast.Constant):
+                mod_name = call_node.args[0].value
+                if isinstance(mod_name, str) and mod_name.strip():
+                    self.imports[mod_name] = self._check_import(mod_name)
 
     def _track_string_assignments(self, node) -> None:
         if isinstance(node, ast.Assign):
