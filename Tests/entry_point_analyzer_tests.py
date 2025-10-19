@@ -146,7 +146,6 @@ def subcommand():
 
         self.analyzer.find_click_commands(module, self.project_path / "click_app.py", Path("click_app.py"))
 
-        # Должны найти как минимум одну команду
         assert len(self.analyzer.entry_points) >= 1
         click_commands = [ep for ep in self.analyzer.entry_points if ep['type'] == 'click_command']
         assert len(click_commands) >= 1
@@ -203,7 +202,6 @@ if __name__ == "__main__":
 
             self.analyzer.find_django_settings(module, self.project_path / filename, Path(filename))
 
-        # Должны найти 3 точки входа
         django_entries = [ep for ep in self.analyzer.entry_points if ep['type'] == 'django_entry']
         assert len(django_entries) == 3
 
@@ -225,7 +223,6 @@ setup(
 '''
         self._create_test_file("setup.py", content)
 
-        # Мокаем чтение файла для проверки содержимого
         with patch('pathlib.Path.read_text') as mock_read:
             mock_read.return_value = content
             self.analyzer.find_setup_py_entry_points(
@@ -239,7 +236,6 @@ setup(
 
     def test_analyze_project_integration(self):
         """Интеграционный тест анализа всего проекта"""
-        # Создаем структуру тестового проекта
         test_files = {
             "main_app.py": '''
 if __name__ == "__main__":
@@ -267,29 +263,22 @@ def helper():
         for filename, content in test_files.items():
             self._create_test_file(filename, content)
 
-        # Запускаем анализ
         entry_points = self.analyzer.analyze_project(self.temp_dir)
 
-        # Должны найти как минимум 3 точки входа
         assert len(entry_points) >= 3
 
-        # Проверяем типы найденных точек входа
         types_found = {ep['type'] for ep in entry_points}
         expected_types = {'main_guard', 'fastapi_app', 'click_command'}
         assert expected_types.issubset(types_found)
 
     def test_error_handling(self):
         """Тест обработки ошибок при анализе"""
-        # Создаем файл с синтаксической ошибкой
         self._create_test_file("syntax_error.py", 'if __name__ == "__main__" \n    pass')  # Нет двоеточия
 
-        # Создаем нормальный файл
         self._create_test_file("good_script.py", 'if __name__ == "__main__": pass')
 
-        # Анализ должен продолжиться несмотря на ошибку
         entry_points = self.analyzer.analyze_project(self.temp_dir)
 
-        # Должны найти точку входа из нормального файла
         assert len(entry_points) == 1
         assert entry_points[0]['file'] == "good_script.py"
 
@@ -300,7 +289,6 @@ def helper():
 
     def test_empty_project(self):
         """Тест анализа пустого проекта"""
-        # Создаем пустую директорию
         empty_dir = self.project_path / "empty"
         empty_dir.mkdir()
 
@@ -311,12 +299,10 @@ def helper():
     def test_complex_main_guard(self):
         """Тест сложных вариантов main guard"""
         complex_cases = [
-            # Main guard с дополнительными условиями
             '''
 if __name__ == "__main__" and len(sys.argv) > 1:
     main()
 ''',
-            # Main guard в середине файла
             '''
 import sys
 
@@ -337,3 +323,16 @@ def cleanup():
             self.analyzer.find_main_guard(module, self.project_path / f"complex_{i}.py", Path(f"complex_{i}.py"))
 
         assert len(self.analyzer.entry_points) == len(complex_cases)
+
+    def test_fallback(self):
+        """Тест, когда явные точки входа не найдены"""
+        case = '''
+    def func():
+        pass
+    #some comment
+    func()
+    '''
+        self._create_test_file("fallback.py", case)
+        self.analyzer.analyze_project(self.temp_dir)
+    
+        assert len(self.analyzer.entry_points) == 1

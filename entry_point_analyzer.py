@@ -7,10 +7,45 @@ from typing import List, Dict, Any
 from ast_parser import parse_file, ASTParseError
 from file_searcher import get_files_in_directory
 
+
+def is_simple_main_guard(test_node: ast.AST) -> bool:
+    """Проверяет простое сравнение __name__ == '__main__'"""
+    return (isinstance(test_node, ast.Compare) and
+            isinstance(test_node.left, ast.Name) and
+            test_node.left.id == '__name__' and
+            len(test_node.ops) == 1 and
+            isinstance(test_node.ops[0], ast.Eq) and
+            len(test_node.comparators) == 1 and
+            isinstance(test_node.comparators[0], ast.Constant) and
+            test_node.comparators[0].value == '__main__')
+
+
+def find_first_executable_line_heuristic(lines: List[str]) -> dict[str, int | str] | None:
+    """
+    Эвристический поиск первой исполняемой строки когда AST-парсинг невозможен
+    """
+    for i, line in enumerate(lines, 1):
+        stripped_line = line.strip()
+
+        if (not stripped_line or
+                stripped_line.startswith('#') or
+                stripped_line.startswith(('import ', 'from ')) or
+                stripped_line.startswith(('class ', 'def ', 'async def '))):
+            continue
+
+        return {
+            'line_number': i,
+            'code': line
+        }
+
+    return None
+
+
 class EntryPointAnalyzer:
     def __init__(self):
         self.entry_points = []
         self.visited_files = set()
+        self.all_python_files = []
 
     def analyze_project(self, project_path: str) -> List[Dict[str, Any]]:
         """
@@ -21,15 +56,19 @@ class EntryPointAnalyzer:
            4. Click команды
            5. argparse скрипты
            6. Исполняемые shebang-файлы
+           7. Fallback: первая исполняемая строка кода
         """
         project_path = Path(project_path)
 
         if not project_path.exists():
             raise FileNotFoundError(f"Project path not found: {project_path}")
 
-        python_files = get_files_in_directory(project_path)
-        for file_path in python_files:
+        self.all_python_files = get_files_in_directory(project_path)
+        for file_path in self.all_python_files:
             self.analyze_file(file_path, project_path)
+
+        if not self.entry_points:
+            self.find_fallback_entry_points(project_path)
 
         return self.entry_points
 
@@ -58,12 +97,80 @@ class EntryPointAnalyzer:
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}")
 
+    def find_fallback_entry_points(self, project_root: Path) -> None:
+        """
+        Fallback-метод: находит первую исполняемую строку кода в каждом файле,
+        которая не является импортом, определением класса/функции или комментарием.
+        """
+        for file_path in self.all_python_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+
+                relative_path = file_path.relative_to(project_root)
+                first_executable_line = self.find_first_executable_line(file_path, lines)
+
+                if first_executable_line:
+                    self.entry_points.append({
+                        'type': 'fallback_executable_code',
+                        'file': str(relative_path),
+                        'line': first_executable_line['line_number'],
+                        'description': f"First executable code: {first_executable_line['code'].strip()}",
+                        'code_snippet': first_executable_line['code'].strip()
+                    })
+
+            except Exception as e:
+                print(f"Error in fallback analysis for {file_path}: {e}")
+
+    def find_first_executable_line(self, file_path: Path, lines: List[str]) -> dict[str, int | str] | None:
+        """
+        Находит первую исполняемую строку кода, которая не является:
+        - комментарием
+        - импортом
+        - определением класса/функции
+        - пустой строкой
+        """
+        try:
+            module = parse_file(file_path, attach_parents=True)
+            definition_lines = set()
+            for node in module.body:
+                if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                    definition_lines.add(node.lineno)
+                for decorator in getattr(node, 'decorator_list', []):
+                    if hasattr(decorator, 'lineno'):
+                        definition_lines.add(decorator.lineno)
+
+            for i, line in enumerate(lines, 1):
+                stripped_line = line.strip()
+
+                if not stripped_line or stripped_line.startswith('#'):
+                    continue
+
+                if stripped_line.startswith(('import ', 'from ')):
+                    continue
+
+                if i in definition_lines:
+                    continue
+
+                if stripped_line.startswith(('class ', 'def ', 'async def ')):
+                    continue
+
+                return {
+                    'line_number': i,
+                    'code': line
+                }
+
+        except (ASTParseError, SyntaxError, Exception) as e:
+            return find_first_executable_line_heuristic(lines)
+
+        return None
+
     def find_main_guard(self, module: ast.Module, file_path: Path, relative_path: Path) -> None:
         """Ищет стандартную конструкцию if __name__ == '__main__'"""
         for node in module.body:
             if isinstance(node, ast.If):
                 test = node.test
-                if self.is_simple_main_guard(test) or self.has_main_guard_in_bool_op(test):
+                if is_simple_main_guard(test) or self.has_main_guard_in_bool_op(test):
                     self.entry_points.append({
                         'type': 'main_guard',
                         'file': str(relative_path),
@@ -73,22 +180,11 @@ class EntryPointAnalyzer:
                 else:
                     break
 
-    def is_simple_main_guard(self, test_node: ast.AST) -> bool:
-        """Проверяет простое сравнение __name__ == '__main__'"""
-        return (isinstance(test_node, ast.Compare) and
-                isinstance(test_node.left, ast.Name) and
-                test_node.left.id == '__name__' and
-                len(test_node.ops) == 1 and
-                isinstance(test_node.ops[0], ast.Eq) and
-                len(test_node.comparators) == 1 and
-                isinstance(test_node.comparators[0], ast.Constant) and
-                test_node.comparators[0].value == '__main__')
-    
     def has_main_guard_in_bool_op(self, test_node: ast.AST) -> bool:
         """Проверяет есть ли __name__ == '__main__' в сложных условиях"""
         if isinstance(test_node, ast.BoolOp):
             for value in test_node.values:
-                if self.is_simple_main_guard(value):
+                if is_simple_main_guard(value):
                     return True
                 elif isinstance(value, ast.BoolOp):
                     if self.has_main_guard_in_bool_op(value):
@@ -229,7 +325,7 @@ def main():
         project_path = sys.argv[1]
     else:
         sys.exit(1)
-    
+
     analyzer = EntryPointAnalyzer()
 
     try:
