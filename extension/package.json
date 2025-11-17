@@ -1,0 +1,45 @@
+{
+  "name": "code-analyzer",
+  "displayName": "PySourceLens",
+  "description": "Анализ и визуализация архитектуры Python-проекта",
+  "publisher": "your-name-or-org",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:codeAnalyzer.analyzeCode"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+    {
+    "command": "codeAnalyzer.analyzeCode",
+    "title": "PySourceLens: Analyze Code"
+    }],
+    "configuration": {
+      "type": "object",
+      "title": "Code Analyzer",
+      "properties": {
+        "codeAnalyzer.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Путь к интерпретатору Python, который может запустить backend/cli.py"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}
