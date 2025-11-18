@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs'; 
 import { Graph } from './types';
 
 type BackendCommand = 'version' | 'analyze';
@@ -38,8 +39,8 @@ export class BackendClient implements vscode.Disposable {
 
   
   private getCliScriptPath(): string {
-    // backend/cli.py лежит рядом с package.json
-    return this.context.asAbsolutePath(path.join('backend', 'cli.py'));
+    const root = path.resolve(this.context.extensionPath, '..');
+    return path.join(root, 'backend', 'cli.py');
   }
 
   
@@ -49,22 +50,32 @@ export class BackendClient implements vscode.Disposable {
     }
 
     const scriptPath = this.getCliScriptPath();
+    const backendCwd = path.dirname(scriptPath);
+
+    console.log('[PySourceLens] *** USING patched backendClient.js ***');
     console.log('[PySourceLens] pythonPath =', this.pythonPath);
     console.log('[PySourceLens] cli script path =', scriptPath);
+    console.log('[PySourceLens] backend cwd =', backendCwd);
+
+    const pyExists = fs.existsSync(this.pythonPath);
+    console.log('[PySourceLens] fs.existsSync(pythonPath) =', pyExists);
+
+    const cliExists = fs.existsSync(scriptPath);
+    console.log('[PySourceLens] fs.existsSync(cli.py) =', cliExists);
 
     try {
       this.process = cp.spawn(
         this.pythonPath,
         [scriptPath, 'serve'],
         {
-          cwd: path.dirname(scriptPath),
-          stdio: ['pipe', 'pipe', 'pipe']
+          cwd: backendCwd,
+          stdio: ['pipe', 'pipe', 'pipe'],
         }
       );
     } catch (err) {
       console.error('[PySourceLens] spawn error (sync):', err);
       vscode.window.showErrorMessage(
-        `PySourceLens: не удалось запустить Python: ${String(err)}`
+        `PySourceLens: не удалось запустить backend: ${String(err)}`
       );
       throw err;
     }
@@ -74,8 +85,7 @@ export class BackendClient implements vscode.Disposable {
       vscode.window.showErrorMessage(
         `PySourceLens: ошибка запуска backend-процесса: ${String(err)}`
       );
-      // заваливаем все ожидающие запросы
-      this.pending.forEach(p => p.reject(err));
+      this.pending.forEach((p) => p.reject(err));
       this.pending = [];
       this.process = null;
     });
@@ -87,18 +97,16 @@ export class BackendClient implements vscode.Disposable {
     this.process.stderr.on('data', (data: Buffer) => {
       const msg = data.toString('utf8');
       console.error('[Code Analyzer backend stderr]', msg);
-      vscode.window.showWarningMessage(`Code Analyzer backend: ${msg}`);
     });
 
     this.process.on('exit', (code, signal) => {
       console.log(`Backend process exited with code=${code}, signal=${signal}`);
       const err = new Error('Backend process exited');
-      this.pending.forEach(p => p.reject(err));
+      this.pending.forEach((p) => p.reject(err));
       this.pending = [];
       this.process = null;
     });
   }
-
 
   
   private handleStdoutData(chunk: string) {
