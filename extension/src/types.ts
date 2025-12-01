@@ -1,7 +1,22 @@
+export interface LocationInfo {
+  start_line?: number | null;
+  start_col?: number | null;
+  end_line?: number | null;
+  end_col?: number | null;
+}
+
+export interface BaseNodeData {
+  name?: string;
+  qualname?: string;
+  path?: string | null;
+  type?: string; 
+  loc?: LocationInfo;
+  [key: string]: any;
+}
+
 export interface GraphNode {
   id: string;
-  // любое содержимое, которое положил бэк (module, class, etc)
-  data: any;
+  data: BaseNodeData;
 }
 
 export interface GraphEdge {
