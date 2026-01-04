@@ -90,14 +90,26 @@ function renderFileTree() {
 
   sorted.forEach(p => {
     const div = document.createElement('div');
-    const depth = (p.replace(/\\/g, '/').split('/').length - 1);
+    const normalizedPath = p.replace(/\\/g, '/');
+    let displayPath = normalizedPath;
+    if (projectRoot && displayPath.startsWith(projectRoot)) {
+      displayPath = displayPath.substring(projectRoot.length);
+      if (displayPath.startsWith('/')) {
+        displayPath = displayPath.substring(1);
+      }
+    }
+    if (!displayPath || displayPath === '') {
+      displayPath = normalizedPath.split('/').pop();
+    }
+    const depth = displayPath.split('/').length - 1;
     div.className = 'tree-item tree-indent-' + Math.min(depth, 4);
-    div.textContent = p.replace(/\\/g, '/');
+    div.textContent = displayPath;
     div.dataset.path = p;
     div.onclick = () => {
       selectTreeItem(p);
       showModuleView(p);
     };
+    
     fileTreeEl.appendChild(div);
   });
 }
