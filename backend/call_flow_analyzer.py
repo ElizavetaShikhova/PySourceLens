@@ -132,18 +132,24 @@ class CallFlowAnalyzer:
                 callee = v._resolve_call(n)
                 if callee:
                     out.append((v._caller(), callee))
-            for ch in ast.iter_child_nodes(n):
-                saved_cls, saved_fn = v.cur_class, v.cur_func
-                if isinstance(ch, ast.ClassDef):
-                    v.visit_ClassDef(ch)
-                elif isinstance(ch, ast.FunctionDef):
-                    v.visit_FunctionDef(ch)
-                elif isinstance(ch, ast.AsyncFunctionDef):
-                    v.visit_AsyncFunctionDef(ch)
-                else:
-                    _walk(ch)
-                v.cur_class, v.cur_func = saved_cls, saved_fn
 
+            if isinstance(n, ast.ClassDef):
+                prev_class = v.cur_class
+                v.cur_class = n.name
+                for child in n.body:
+                    _walk(child)
+                v.cur_class = prev_class
+
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                prev_func = v.cur_func
+                v.cur_func = n.name
+                for child in n.body:
+                    _walk(child)
+                v.cur_func = prev_func
+
+            else:
+                for child in ast.iter_child_nodes(n):
+                    _walk(child)
         _walk(tree)
         return out
 
