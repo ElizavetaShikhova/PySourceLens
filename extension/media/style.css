@@ -214,3 +214,23 @@ html, body {
 .muted {
   color: var(--fg-muted);
 }
+
+#navigation-buttons {
+  margin-top: 8px;
+}
+
+.nav-btn {
+  background: none;
+  border: 1px solid #007acc;
+  color: #007acc;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+
+.nav-btn:hover {
+  background-color: #007acc;
+  color: white;
+}
