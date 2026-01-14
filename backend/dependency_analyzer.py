@@ -18,10 +18,33 @@ class DependencyAnalyzer:
         self.entry_points = self._get_entry_point()
         self.elements = self._get_elements()
 
+    def _build_import_edges(self, nodes: Dict[str, Node]) -> List[Edge]:
+        from graph import Edge
+        import_analyzer = ImportAnalyzer()
+        imports_by_file = import_analyzer.find_imports_with_sources(self.files)
+        
+        edges = []
+        node_ids = set(nodes.keys())
+        
+        for file_path, imported_modules in imports_by_file.items():
+            try:
+                module_id = self.path_to_module_name(file_path, self.directory_path)
+            except ValueError:
+                continue
+                
+            if module_id not in node_ids:
+                continue
+                
+            for imp_name in imported_modules:
+                if imp_name in node_ids:
+                    edges.append(Edge(from_node=module_id, to_node=imp_name))
+                    
+        return edges
+
     def create_dependency(self):
         nodes: dict[str, Node] = self._get_nodes()
-        graph = Graph(nodes=list(nodes.values()), edges=[])
-        # graph.edges = call_flow_analyzer()
+        import_edges = self._build_import_edges(nodes)
+        graph = Graph(nodes=list(nodes.values()), edges=import_edges) 
         return graph
 
     def _get_files(self) -> List[Path]:

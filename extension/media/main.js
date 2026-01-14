@@ -175,7 +175,7 @@ function showProjectView() {
   const edgesTitle = document.createElement('div');
   edgesTitle.className = 'muted';
   edgesTitle.style.marginTop = '8px';
-  edgesTitle.textContent = 'Зависимости между модулями (по вызовам):';
+  edgesTitle.textContent = 'Зависимости между модулями:';
   diagramEl.appendChild(edgesTitle);
 
   const edgesDiv = document.createElement('div');

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 import ast_parser
 import ast
 from ASTParseError import ASTParseError
@@ -178,6 +178,17 @@ class ImportAnalyzer:
                 isinstance(node.value.value, str)):
                 var_name = node.targets[0].id
                 self._string_literals[var_name] = node.value.value
+
+    def find_imports_with_sources(self, all_paths: list[Path]) -> Dict[Path, List[str]]:
+        result: Dict[Path, List[str]] = {}
+        for path in all_paths:
+            original_imports = self.imports.copy()
+            self.imports = {}
+            self._find_import_in_file(path)
+            result[path] = list(self.imports.keys())
+            self.imports.update(original_imports)
+        
+        return result
                     
     
 if __name__ == "__main__":

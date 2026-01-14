@@ -12,14 +12,24 @@ def _analyze_once(project_path: str | Path, pretty: bool = False) -> dict:
     project_path = str(project_path)
     da = DependencyAnalyzer(project_path)
     graph = da.create_dependency()
+
+    if isinstance(graph.nodes, dict):
+        nodes_dict = graph.nodes
+    else:
+        nodes_dict = {n.id: n for n in graph.nodes}
+
     cfa = CallFlowAnalyzer()
-    edges = cfa.build_edges(
+    call_edges = cfa.build_edges(
         files=da.files,
         elements=da.elements,
-        nodes=graph.nodes if isinstance(graph.nodes, dict) else {n.id: n for n in graph.nodes},
+        nodes=nodes_dict,
         project_root=Path(project_path),
     )
-    graph.edges = edges
+    
+    import_edges = da._build_import_edges(nodes_dict)
+    all_edges = call_edges + import_edges
+    graph.edges = all_edges
+    
     return GraphSerializer.to_dict(graph)
 
 
