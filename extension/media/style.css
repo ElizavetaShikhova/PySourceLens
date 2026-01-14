@@ -213,6 +213,9 @@ html, body {
 
 .muted {
   color: var(--fg-muted);
+  font-size: 13px;
+  color: var(--fg);
+  font-weight: bold;
 }
 
 #navigation-buttons {

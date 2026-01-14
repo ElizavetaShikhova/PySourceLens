@@ -266,6 +266,14 @@ function showModuleView(modulePath) {
   codeBlockEl.textContent = '';
   detailsHeaderEl.textContent = '';
 
+  const outgoingCalls = {};
+  for (const edge of currentGraph.edges || []) {
+    if (!outgoingCalls[edge.from]) {
+      outgoingCalls[edge.from] = [];
+    }
+    outgoingCalls[edge.from].push(edge.to);
+  }
+  
   const moduleNode = getModuleNodeByPath(modulePath);
   if (!moduleNode) {
     levelKindEl.textContent = 'УРОВЕНЬ: МОДУЛЬ';
@@ -335,17 +343,36 @@ function showModuleView(modulePath) {
 
     const methods = Array.isArray(d.methods) ? d.methods : [];
     methods.forEach(m => {
-      const line = document.createElement('div');
-      line.style.marginLeft = '18px';
-      line.textContent = '↓ ' + m.name + '()';
-      line.className = 'linkish';
-      line.addEventListener('click', () => {
-        const methodId = (clsNode.id || d.qualname || '') + '.' + m.name;
-        showElementView(methodId);
-      });
-      box.appendChild(line);
-    });
+      const methodId = clsNode.id + '.' + m.name;
+      const calls = outgoingCalls[methodId] || [];
 
+      const methodLine = document.createElement('div');
+      methodLine.style.cursor = 'pointer';
+      methodLine.textContent = m.name + '():';
+      methodLine.title = 'Показать детали метода';
+      methodLine.onclick = () => showElementView(methodId);
+      box.appendChild(methodLine);
+
+      if (calls.length > 0) {
+        calls.forEach(id => {
+          const callLine = document.createElement('div');
+          callLine.className = 'linkish';
+          callLine.style.marginLeft = '18px';
+          callLine.textContent = '→ ' + id;
+          callLine.title = 'Перейти к элементу';
+          callLine.onclick = () => showElementView(id);
+          diagramEl.appendChild(callLine);
+          box.appendChild(callLine);
+        });
+      } else {
+        const noCall = document.createElement('div');
+        noCall.style.color = 'var(--fg-muted)';
+        noCall.style.fontStyle = 'italic';
+        noCall.textContent = '— нет вызовов';
+        box.appendChild(noCall);
+      }
+    });
+           
     diagramEl.appendChild(box);
   });
 
@@ -356,11 +383,40 @@ function showModuleView(modulePath) {
     diagramEl.appendChild(sep);
 
     functions.forEach(fnNode => {
-      const line = document.createElement('div');
-      line.className = 'linkish';
-      line.textContent = fnNode.id;
-      line.addEventListener('click', () => showElementView(fnNode.id));
-      diagramEl.appendChild(line);
+      const calls = outgoingCalls[fnNode.id] || [];
+
+      const funcLine = document.createElement('div');
+      funcLine.style.cursor = 'pointer';
+      funcLine.textContent = fnNode.id + ':';
+      funcLine.title = 'Показать детали функции';
+      funcLine.onclick = () => showElementView(fnNode.id);
+      diagramEl.appendChild(funcLine);
+
+      if (calls.length > 0) {
+        calls.forEach(id => {
+          const callLine = document.createElement('div');
+          callLine.className = 'linkish';
+          callLine.textContent = '→ ' + id;
+          callLine.title = 'Перейти к элементу';
+          callLine.onclick = () => showElementView(id);
+          diagramEl.appendChild(callLine);
+        });
+      } else {
+        const noCall = document.createElement('div');
+        noCall.style.marginLeft = '18px';
+        noCall.style.color = 'var(--fg-muted)';
+        noCall.style.fontStyle = 'italic';
+        noCall.textContent = '— нет вызовов';
+        diagramEl.appendChild(noCall);
+      }
+    });
+
+    diagramEl.querySelectorAll('[data-element-id]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = el.getAttribute('data-element-id');
+        if (id) showElementView(id);
+      });
     });
   }
 
