@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 import ast_parser
 import ast
 from ASTParseError import ASTParseError
@@ -69,23 +69,68 @@ class ImportAnalyzer:
                     alias_name = alias.asname if alias.asname else "importlib"
                     self._importlib_aliases.add(alias_name)
 
-    def _from_import(self, node, path) -> None:
-        if isinstance(node, ast.ImportFrom):
-            if node.module == "__future__":
+    def _from_import(self, node, current_file_path: Path) -> None:
+        if not isinstance(node, ast.ImportFrom):
+            return
+
+        if node.module == "future":
+            return
+
+        if node.module == "importlib":
+            for alias in node.names:
+                if alias.name in ("import_module", "import"):
+                    alias_name = alias.asname or alias.name
+                    self._importlib_functions.add(alias_name)
+            self.imports["importlib"] = self._check_import("importlib")
+            return
+        
+        if node.level > 0:
+            current_dir = current_file_path.parent
+            base_dir = current_dir
+            for _ in range(node.level - 1):
+                base_dir = base_dir.parent
+                if base_dir == base_dir.parent:
                     return
-            if node.module == "importlib":
-                for alias in node.names:
-                    if alias.name in ("import_module", "__import__"):
-                        alias_name = alias.asname or alias.name
-                        self._importlib_functions.add(alias_name)
-                self.imports["importlib"] = self._check_import("importlib")
+
+            if node.module:
+                module_parts = node.module.split(".")
+                candidate_path = base_dir.joinpath(*module_parts)
+                candidates = [
+                    candidate_path.with_suffix(".py"),
+                    candidate_path / "init.py"
+                ]
+                resolved = None
+                for cand in candidates:
+                    if cand.exists():
+                        resolved = cand.resolve()
+                        break
+                if resolved:
+                    key = str(resolved)
+                    self.imports[key] = str(resolved)
             else:
-                if node.module:
-                    self.imports[node.module] = self._check_import(node.module)
-                else:
-                    for alias in node.names:
-                        name_import = alias.name
-                        self.imports[name_import] = self._check_import(name_import)              
+                for alias in node.names:
+                    mod_name = alias.name
+                    candidate_path = base_dir / mod_name
+                    candidates = [
+                        candidate_path.with_suffix(".py"),
+                        candidate_path / "init.py"
+                    ]
+                    resolved = None
+                    for cand in candidates:
+                        if cand.exists():
+                            resolved = cand.resolve()
+                            break
+                    if resolved:
+                        key = str(resolved)
+                        self.imports[key] = str(resolved)
+
+        else:
+            if node.module:
+                self.imports[node.module] = self._check_import(node.module)
+            else:
+                for alias in node.names:
+                    name_import = alias.name
+                    self.imports[name_import] = self._check_import(name_import)  
 
     def _assigning_variable_importlib(self, node) -> None:
         if isinstance(node, ast.Assign):
@@ -133,6 +178,17 @@ class ImportAnalyzer:
                 isinstance(node.value.value, str)):
                 var_name = node.targets[0].id
                 self._string_literals[var_name] = node.value.value
+
+    def find_imports_with_sources(self, all_paths: list[Path]) -> Dict[Path, List[str]]:
+        result: Dict[Path, List[str]] = {}
+        for path in all_paths:
+            original_imports = self.imports.copy()
+            self.imports = {}
+            self._find_import_in_file(path)
+            result[path] = list(self.imports.keys())
+            self.imports.update(original_imports)
+        
+        return result
                     
     
 if __name__ == "__main__":

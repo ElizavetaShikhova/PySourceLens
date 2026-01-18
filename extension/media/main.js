@@ -25,6 +25,7 @@ window.addEventListener('message', event => {
   if (msg.type === 'initGraph') {
     currentGraph = msg.graph;
     projectRoot = msg.projectRoot;
+    console.log('Получен граф:', currentGraph);
     nodeById = {};
     (currentGraph.nodes || []).forEach(n => { nodeById[n.id] = n; });
     moduleNodes = (currentGraph.nodes || []).filter(isModuleNode);
@@ -90,14 +91,30 @@ function renderFileTree() {
 
   sorted.forEach(p => {
     const div = document.createElement('div');
-    const depth = (p.replace(/\\/g, '/').split('/').length - 1);
+    const normalizedPath = p.replace(/\\/g, '/');
+    let displayPath = normalizedPath;
+
+    if (projectRoot && displayPath.startsWith(projectRoot)) {
+      displayPath = displayPath.substring(projectRoot.length);
+      if (displayPath.startsWith('/')) {
+        displayPath = displayPath.substring(1);
+      }
+    }
+
+    const depth = displayPath.split('/').length - 1;
+
+    const fileName = displayPath.split('/').pop() || normalizedPath.split('/').pop();
+
     div.className = 'tree-item tree-indent-' + Math.min(depth, 4);
-    div.textContent = p.replace(/\\/g, '/');
+    div.textContent = fileName;
+    div.title = displayPath; 
     div.dataset.path = p;
+
     div.onclick = () => {
       selectTreeItem(p);
       showModuleView(p);
     };
+
     fileTreeEl.appendChild(div);
   });
 }
@@ -158,7 +175,7 @@ function showProjectView() {
   const edgesTitle = document.createElement('div');
   edgesTitle.className = 'muted';
   edgesTitle.style.marginTop = '8px';
-  edgesTitle.textContent = 'Зависимости между модулями (по вызовам):';
+  edgesTitle.textContent = 'Зависимости между модулями:';
   diagramEl.appendChild(edgesTitle);
 
   const edgesDiv = document.createElement('div');
@@ -183,6 +200,7 @@ function showProjectView() {
 
   detailsHeaderEl.innerHTML = '<span class="muted">Подсказка:</span> нажмите на модуль или файл слева, чтобы перейти на уровень "Модуль".';
   codeBlockEl.textContent = '';
+  updateNavigationButtons();
 }
 
 function isEntryModule(moduleNode) {
@@ -248,6 +266,14 @@ function showModuleView(modulePath) {
   codeBlockEl.textContent = '';
   detailsHeaderEl.textContent = '';
 
+  const outgoingCalls = {};
+  for (const edge of currentGraph.edges || []) {
+    if (!outgoingCalls[edge.from]) {
+      outgoingCalls[edge.from] = [];
+    }
+    outgoingCalls[edge.from].push(edge.to);
+  }
+  
   const moduleNode = getModuleNodeByPath(modulePath);
   if (!moduleNode) {
     levelKindEl.textContent = 'УРОВЕНЬ: МОДУЛЬ';
@@ -317,17 +343,36 @@ function showModuleView(modulePath) {
 
     const methods = Array.isArray(d.methods) ? d.methods : [];
     methods.forEach(m => {
-      const line = document.createElement('div');
-      line.style.marginLeft = '18px';
-      line.textContent = '↓ ' + m.name + '()';
-      line.className = 'linkish';
-      line.addEventListener('click', () => {
-        const methodId = (clsNode.id || d.qualname || '') + '.' + m.name;
-        showElementView(methodId);
-      });
-      box.appendChild(line);
-    });
+      const methodId = clsNode.id + '.' + m.name;
+      const calls = outgoingCalls[methodId] || [];
 
+      const methodLine = document.createElement('div');
+      methodLine.style.cursor = 'pointer';
+      methodLine.textContent = m.name + '():';
+      methodLine.title = 'Показать детали метода';
+      methodLine.onclick = () => showElementView(methodId);
+      box.appendChild(methodLine);
+
+      if (calls.length > 0) {
+        calls.forEach(id => {
+          const callLine = document.createElement('div');
+          callLine.className = 'linkish';
+          callLine.style.marginLeft = '18px';
+          callLine.textContent = '→ ' + id;
+          callLine.title = 'Перейти к элементу';
+          callLine.onclick = () => showElementView(id);
+          diagramEl.appendChild(callLine);
+          box.appendChild(callLine);
+        });
+      } else {
+        const noCall = document.createElement('div');
+        noCall.style.color = 'var(--fg-muted)';
+        noCall.style.fontStyle = 'italic';
+        noCall.textContent = '— нет вызовов';
+        box.appendChild(noCall);
+      }
+    });
+           
     diagramEl.appendChild(box);
   });
 
@@ -338,16 +383,46 @@ function showModuleView(modulePath) {
     diagramEl.appendChild(sep);
 
     functions.forEach(fnNode => {
-      const line = document.createElement('div');
-      line.className = 'linkish';
-      line.textContent = fnNode.id;
-      line.addEventListener('click', () => showElementView(fnNode.id));
-      diagramEl.appendChild(line);
+      const calls = outgoingCalls[fnNode.id] || [];
+
+      const funcLine = document.createElement('div');
+      funcLine.style.cursor = 'pointer';
+      funcLine.textContent = fnNode.id + ':';
+      funcLine.title = 'Показать детали функции';
+      funcLine.onclick = () => showElementView(fnNode.id);
+      diagramEl.appendChild(funcLine);
+
+      if (calls.length > 0) {
+        calls.forEach(id => {
+          const callLine = document.createElement('div');
+          callLine.className = 'linkish';
+          callLine.textContent = '→ ' + id;
+          callLine.title = 'Перейти к элементу';
+          callLine.onclick = () => showElementView(id);
+          diagramEl.appendChild(callLine);
+        });
+      } else {
+        const noCall = document.createElement('div');
+        noCall.style.marginLeft = '18px';
+        noCall.style.color = 'var(--fg-muted)';
+        noCall.style.fontStyle = 'italic';
+        noCall.textContent = '— нет вызовов';
+        diagramEl.appendChild(noCall);
+      }
+    });
+
+    diagramEl.querySelectorAll('[data-element-id]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = el.getAttribute('data-element-id');
+        if (id) showElementView(id);
+      });
     });
   }
 
   detailsHeaderEl.innerHTML = '<span class="muted">Подсказка:</span> нажмите на метод или функцию, чтобы открыть уровень "Элемент".';
   codeBlockEl.textContent = '';
+  updateNavigationButtons();
 }
 
 function showElementView(elementId) {
@@ -421,6 +496,7 @@ function showElementView(elementId) {
   } else {
     codeBlockEl.textContent = 'Файл для элемента не определён.';
   }
+  updateNavigationButtons();
 }
 
 function renderElementCode(code, startLine) {
@@ -448,4 +524,35 @@ function escapeHtml(str) {
 function escapeAttr(str) {
   if (str == null) return '';
   return String(str).replace(/"/g, '&quot;');
+}
+
+function updateNavigationButtons() {
+  const navButtonsEl = document.getElementById('navigation-buttons');
+  navButtonsEl.innerHTML = '';
+
+  if (currentView === 'module' || currentView === 'element') {
+    const backToProjectBtn = document.createElement('button');
+    backToProjectBtn.className = 'nav-btn';
+    backToProjectBtn.textContent = '← К проекту';
+    backToProjectBtn.onclick = () => {
+      showProjectView();
+      fileTreeEl.querySelectorAll('.tree-item').forEach(i => i.classList.remove('selected'));
+      currentModulePath = null;
+      currentElementId = null;
+    };
+    navButtonsEl.appendChild(backToProjectBtn);
+  }
+
+  if (currentView === 'element' && currentModulePath) {
+    const backToModuleBtn = document.createElement('button');
+    backToModuleBtn.className = 'nav-btn';
+    backToModuleBtn.textContent = '← К модулю';
+    backToModuleBtn.onclick = () => {
+      selectTreeItem(currentModulePath);
+      showModuleView(currentModulePath);
+    };
+    navButtonsEl.appendChild(backToModuleBtn);
+  }
+
+  navButtonsEl.style.display = navButtonsEl.children.length > 0 ? 'block' : 'none';
 }

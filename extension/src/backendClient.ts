@@ -70,6 +70,7 @@ export class BackendClient implements vscode.Disposable {
         {
           cwd: backendCwd,
           stdio: ['pipe', 'pipe', 'pipe'],
+          encoding: 'utf8'
         }
       );
     } catch (err) {
